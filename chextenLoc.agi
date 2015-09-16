@@ -1,0 +1,261 @@
+#!/usr/bin/php -q
+<?php
+error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
+
+declare(ticks = 1);
+
+date_default_timezone_set('Europe/Minsk');
+setlocale(LC_ALL, "ru_RU.UTF-8");
+setlocale(LC_CTYPE, array(
+    'ru_RU.utf8',
+    'ru_UA.utf8'
+));
+
+set_time_limit(60);
+ini_set('max_execution_time', 60);
+
+if (function_exists('pcntl_signal')) {
+    pcntl_signal(SIGHUP, SIG_IGN);
+}
+
+include (dirname(__FILE__) . "/vendor/autoload.php");
+include (dirname(__FILE__) . "/class/autoload.php");
+
+$agi = new AGI();
+$asm = new AGI_AsteriskManager();
+$rrApp = new Rr($agi);
+
+$agi_accountcode = $agi->request['agi_accountcode'];
+$agi_context = $agi->request['agi_context'];
+$agi_callerid = $agi->request['agi_callerid'];
+$agi_channel = $agi->request['agi_channel'];
+
+// если нужно набрать не DST который задан (удобно для подмены)
+$agi_uniqueid = $agi->request['agi_uniqueid'];
+$agi_extension = $agi->request['agi_extension'];
+if (isset($_SERVER["argv"][2]) && is_numeric($_SERVER["argv"][2])) {
+    $agi_extension = $_SERVER["argv"][2];
+}
+
+$GLOBALS['KINT_DUMP'] = FALSE;
+
+// ========================  Отладка  ===============================
+if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
+    
+    $GLOBALS['KINT_DUMP']=TRUE; 
+    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
+    $agi_context = 'textcontext';
+    $agi_channel = '';
+    $agi_callerid='';
+    $agi_uniqueid = "00" . time() . ".00";
+}
+
+// ========================  Отладка  ===============================
+
+$rrApp->uniqueid = $agi_uniqueid;
+$rrApp->extension = $agi_extension;
+
+$rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
+
+$mes = "Исходящий звонок на номер " . $agi_extension;
+$rrApp->loger(info, __FILE__, __LINE__, $mes);
+
+$rrApp->call = array();
+
+if (!is_numeric($agi_extension) OR is_null($agi_uniqueid)) {
+    $mes = "Не хватает переменных; extension  в неверном формате ";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+if (empty($agi_accountcode)) {
+    $mes = "Не хватает переменных accountcode пустой";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+// ========================  Блок потребитель   ===============================
+
+$cusdata = Cc_customer::where('cust_accountcode', $agi_accountcode)->where('active_customer', 1)->first();
+if (!isset($cusdata->cust_minus_prefix)) {
+    $mes = "Accountcode: $agi_accountcode не найден; Выходим.";
+    $agi->verbose($mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+$rrApp->loger(debug, __FILE__, __LINE__, "Данные пользователя (потребитель) по accountcode: $agi_accountcode", json_decode(json_encode($cusdata) , true));
+
+//Удаляем и добавляем префикс в номере от Custtomer
+$removeprefix = $cusdata->cust_minus_prefix;
+if (!empty($removeprefix) && strncmp($agi_extension, $removeprefix, strlen($removeprefix)) == 0) {
+    $agi_extension = substr($agi_extension, strlen($removeprefix));
+    $rrApp->loger(info, __FILE__, __LINE__, "Удаление префикса (потребитель): " . $removeprefix . " agi_extension= :" . $agi_extension);
+}
+$addprefix = $cusdata->cust_plass_prefix;
+if (!empty($addprefix)) {
+    $agi_extension = trim($addprefix) . $agi_extension;
+    $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса (потребитель): " . $addprefix . "  agi_extension= :" . $agi_extension);
+}
+
+// CID customer
+if (!empty($cusdata->forced_clid_customer)) {
+    $rrApp->loger(info, __FILE__, __LINE__, "Установка CID (customer): " . $cusdata['forced_clid_customer']);
+    $agi->set_callerid($cusdata->forced_clid_customer);
+}
+
+$arbb = $rrApp->get_channels_busy($asm);
+$rrApp->loger(info, __FILE__, __LINE__, " Список занятых каналов (вход): ", $arbb['account']);
+
+//Проверка на количество линий на входе.
+$max_account = (int)$cusdata->custhannels;
+if ($max_account === '-1') {
+    $max_account = NULL;
+}
+
+if (isset($arbb['account'][$agi_accountcode])) {
+    if (!is_null($max_account) && $arbb['account'][$agi_accountcode] >= $max_account) {
+        $mes = "Количество линий agi_accountcode  " . $agi_accountcode;
+        $mes = " :" . $arbb['account'][$agi_accountcode];
+        $mes = " больше чем " . $cusdata->custhannels . "в табличке cc_customer;  Выходим.";
+        $rrApp->stoperror(__FILE__, __LINE__, $mes);
+    }
+}
+
+$custtariff = Cc_custariff::GetCusTariff($cusdata->id_customer);
+if (!is_array($custtariff)) {
+    $mes = "Не найден потребительский тариф для  id_accountcode : " . $agi_accountcode;
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+};
+
+if ($rrApp->agiconfig['verbosity_level'] >= info) {
+    $mes = array();
+    foreach ($custtariff as $value) {
+        $mes[] = "id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
+    }
+    $rrApp->loger(info, __FILE__, __LINE__, "Список тарифных планов (потребитель) id_accountcode : " . $agi_accountcode, $mes);
+}
+$rrApp->cust_limit_dial = 0;
+foreach ($custtariff as $value) {
+    if (!preg_match("'" . $value['regular_custariff'] . "'", $agi_extension)) {
+        $mes = "Проверка на (потребитель) регулярку не пройдена R:" . $value['regular_custariff'] . "  ext:" . $agi_extension . "; continue";
+        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        continue;
+    }
+    
+    if (!empty($addprefix)) {
+        $agi_extension = trim($addprefix) . $agi_extension;
+        $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса CusttomerTariff: " . $addprefix . "  agi_extension= :" . $agi_extension);
+    }
+    
+    $rrApp->cust_limit_dial = $rrApp->calculate_timedial($value['limit'], $value['whattdo']);
+    
+    if (is_null($rrApp->cust_limit_dial)) {
+        $mes = "В тарифе id: " . $value['name_custariff'] . " закончились минуты;  continue";
+        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        $agi->verbose($mes);
+        continue;
+    }
+    
+    $mes = "Проверка на customer регулярку пройдена;";
+    $mes.= " Регулярка: id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->loger(info, __FILE__, __LINE__, "Доступная длительность звонка (потребитель) :" . $rrApp->cust_limit_dial);
+    $rrApp->call['to_id_custariff_call'] = $value['id_custariff'];
+    break;
+}
+
+// выход или по break или по перебору
+if (is_null($rrApp->cust_limit_dial)) {
+    $mes = "Нет доступных минут для звонка  agi_accountcode: " . $agi_accountcode . ", либо не найден подходящий тариф для звонка";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+// ========================  Блок LOCAL   ===============================
+
+$sips = Cc_sip_buddies::where('short_code', $agi_extension)->lists('username');
+$strdial = NULL;
+if (is_array($sips)) {
+    foreach ($sips as $value) {
+        $strdial.= "SIP/" . $value;
+        $strdial.= "&&";
+    }
+}
+$iax = Cc_iax_buddies::where('short_code', $agi_extension)->lists('username');
+if (is_array($iax)) {
+    foreach ($iax as $value) {
+        $strdial.= "IAX/" . $value;
+        $strdial.= "&&";
+    }
+}
+
+$rrApp->call['accountcode'] = $agi_accountcode;
+$rrApp->call['starttime'] = date("Y-m-d H:i:s", time());
+$rrApp->call['calledstation'] = (is_numeric($agi->request['agi_arg_1'])) ? $agi->request['agi_arg_1'] : 0;
+$rrApp->call['type'] = 'local';
+$rrApp->call['uniqueid'] = $agi_uniqueid;
+$rrApp->call['clid'] = $agi_channel;
+
+if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
+    $rrApp->call['src'] = $agi_accountcode;
+} 
+else {
+    $src = $agi->get_variable('CDR(src)', true);
+    $rrApp->call['src'] = isset($src['data']) ? $src['data'] : $agi_accountcode;
+}
+
+$rrApp->call['cid'] = $agi_callerid;
+$rrApp->call['dst'] = $agi_extension;
+
+$rrApp->unixdatatime['starttime'] = time();
+
+if (!is_null($strdial)) {
+    $strdial = substr($strdial, 0, -2);
+    $rrApp->loger(info, __FILE__, __LINE__, "Локальный звонок на номер" . $agi_extension);
+    
+    if ($rrApp->agiconfig['record_call_local'] && !empty($rrApp->uniqueid)) {
+        $rrApp->agi->exec("StopMixMonitor");
+        $fn = date("d-m-Y", time()) . "/" . $agi_extension . "/" . $rrApp->uniqueid . '.' . $rrApp->agiconfig['monitor_formatfile'];
+        $rrApp->agi->set_variable('CDR(userfield)', "audio:" . $rrApp->agiconfig['monitor_path_local'] . $fn);
+        $rrApp->call['userfield'] = "audio:" . $rrApp->agiconfig['monitor_path_local'] . $fn;
+        $command_mixmonitor = "MixMonitor " . $rrApp->agiconfig['monitor_path_local'] . $fn . "," . $rrApp->agiconfig['mixmon_post'];
+        $rx = $rrApp->agi->exec($command_mixmonitor);
+        $rrApp->loger(debug, __FILE__, __LINE__, $command_mixmonitor);
+        $rrApp->loger(debug, __FILE__, __LINE__, "result : MixMonitor" . $rx['data']);
+    }
+    
+    $time2call = $rrApp->agiconfig['maxlong_call_local'];
+    
+    if ($rrApp->cust_limit_dial < $time2call) {
+        $time2call = $rrApp->cust_limit_dia;
+        $rrApp->loger(info, __FILE__, __LINE__, "Установка limit_dial равному максимуму для потребителя(cust_limit_dial): " . $rrApp->cust_limit_dia . ' c');
+    }
+    
+    $dialparams = str_replace("%timeout%", $time2call, $rrApp->agiconfig['dialcommand_param_local']);
+    $rrApp->dialstatus = $rrApp->run_dial($strdial . $dialparams);
+    
+    if ($rrApp->dialstatus === "ANSWER") {
+        if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
+            $rrApp->call['billsec'] = 10;
+            $rrApp->loger(info, __FILE__, __LINE__, "ANSWEREDTIME(debug):" . $rrApp->call['billsec']);
+        } 
+        else {
+            $rrApp->call['billsec'] = $rrApp->agi->get_variable('ANSWEREDTIME', true);
+            $rrApp->loger(info, __FILE__, __LINE__, "ANSWEREDTIME(billsec):" . $rrApp->call['billsec']);
+        }
+    } 
+    else {
+        
+        if ($rrApp->agiconfig['record_call_local'] === 1) {
+            $rrApp->agi->exec("StopMixMonitor");
+            $rrApp->loger(info, __FILE__, __LINE__, "StopMixMonitor uniqueid:" . $rrApp->uniqueid);
+            exec("rm " . $rrApp->agiconfig['monitor_path_local'] . $fn);
+        }
+    }
+}
+else{
+    $mes="Короткий номер $agi_extension не найден в  базе";
+    $rrApp->call['userfield'] =$mes;
+    $rrApp->loger(error, __FILE__, __LINE__, $mes);
+}
+
+$rrApp->logedr();
+$rrApp->loger(info, __FILE__, __LINE__, "chextenLoc; Выход по дефолтy;");
+$agi->hangup();
+exit();

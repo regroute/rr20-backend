@@ -1,0 +1,104 @@
+#!/usr/bin/php -q
+<?php
+error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
+
+declare(ticks = 1);
+
+date_default_timezone_set('Europe/Minsk');
+setlocale(LC_ALL, "ru_RU.UTF-8");
+setlocale(LC_CTYPE, array(
+    'ru_RU.utf8',
+    'ru_UA.utf8'
+));
+
+set_time_limit(60);
+ini_set('max_execution_time', 60);
+
+if (function_exists('pcntl_signal')) {
+    pcntl_signal(SIGHUP, SIG_IGN);
+}
+
+include (dirname(__FILE__) . "/vendor/autoload.php");
+include (dirname(__FILE__) . "/class/autoload.php");
+
+$agi = new AGI();
+$asm = new AGI_AsteriskManager();
+$rrApp = new Rr($agi);
+
+$agi_accountcode = $agi->request['agi_accountcode'];
+$agi_context = $agi->request['agi_context'];
+$agi_callerid = $agi->request['agi_callerid'];
+$agi_channel = $agi->request['agi_channel'];
+
+// если нужно набрать не DST который задан (удобно для подмены)
+$agi_uniqueid = $agi->request['agi_uniqueid'];
+$agi_extension = $agi->request['agi_extension'];
+if (isset($_SERVER["argv"][2]) && !empty($_SERVER["argv"][2])) {
+    $agi_extension = $_SERVER["argv"][2];
+}
+
+$GLOBALS['KINT_DUMP'] = FALSE;
+
+// ========================  Отладка  ===============================
+if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
+    
+    $GLOBALS['KINT_DUMP'] = TRUE;
+    $agi_callerid = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '000000000';
+    $agi_context = 'textcontext';
+    $agi_channel = '';
+    $agi_uniqueid = "00" . time() . ".00";
+}
+
+// ========================  Отладка  ===============================
+
+$rrApp->uniqueid = $agi_uniqueid;
+$rrApp->extension = $agi_extension;
+
+$rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
+$rrApp->call = array();
+
+$rrApp->loger(info, __FILE__, __LINE__, "Входящий звонок на номер " . $agi_extension);
+
+$rrApp->call['starttime'] = date("Y-m-d H:i:s", time());
+$rrApp->call['calledstation'] = (is_numeric($agi->request['agi_arg_1'])) ? $agi->request['agi_arg_1'] : 0;
+$rrApp->call['uniqueid'] = $agi_uniqueid;
+$rrApp->call['type'] = 'in';
+$rrApp->call['src'] = $agi_callerid;
+$rrApp->call['dst'] = $agi_extension;
+$rrApp->call['cid'] = $agi_callerid;
+$rrApp->call['clid'] = $agi_channel;
+$rrApp->unixdatatime['starttime'] = time();
+
+// ========================  Проверка на наличие в cc_blacklist  ===============================
+$black = Cc_blacklist::GetExtenBlackList($agi_callerid, 'IN');
+if (isset($black->id_assignment)) {
+    $mes = "Номер: " . $agi_callerid . " находится в черном списке c пометкой: " . $black->note_blacklist . ' \n';
+    $agi->verbose($mes);
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->call['in_id_assignment'] = $black->id_assignment;
+    $rrApp->call['in_id_blacklist'] = $black->id_blacklist;
+    $rrApp->call['userfield'] = $black->note_blacklist;
+    $rrApp->actionEntryCall($black);
+}
+
+//Ищем  назначение для данного DID  в транках.
+$sing_destinations = Cc_trunk::GetSingleDestination($agi_extension);
+
+if (isset($sing_destinations->id_assignment)) {
+    $mes = "Найден марштур для DID:$agi_extension  назначение:" . $sing_destinations->destination_assignment;
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->call['in_id_assignment'] = $sing_destinations->id_assignment;
+    $rrApp->call['id_did'] = $sing_destinations->id_trunk;
+    $rrApp->call['userfield'] = $sing_destinations->note_assignment;
+    $rrApp->actionEntryCall($sing_destinations,$agi_extension);
+}
+$mes = "ВНИМАНИЕ!! Не найден марштур для DID:$agi_extension; hangup.";
+$rrApp->loger(error, __FILE__, __LINE__, $mes);
+$rrApp->loger(info, __FILE__, __LINE__, "chextenDid Выход по дефолтy; hangup");
+
+if (!isset($_SERVER["argv"][3])) {
+    $agi->verbose($mes);
+    $rrApp->logedr();
+    $agi->hangup();
+}
+exit();

@@ -1,0 +1,160 @@
+#!/usr/bin/php -q
+<?php
+error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
+
+declare(ticks = 1);
+
+date_default_timezone_set('Europe/Minsk');
+setlocale(LC_ALL, "ru_RU.UTF-8");
+setlocale(LC_CTYPE, array(
+    'ru_RU.utf8',
+    'ru_UA.utf8'
+));
+
+set_time_limit(60);
+ini_set('max_execution_time', 60);
+
+if (function_exists('pcntl_signal')) {
+    pcntl_signal(SIGHUP, SIG_IGN);
+}
+
+include (dirname(__FILE__) . "/vendor/autoload.php");
+include (dirname(__FILE__) . "/class/autoload.php");
+
+$agi = new AGI();
+$asm = new AGI_AsteriskManager();
+$rrApp = new Rr($agi);
+
+$agi_accountcode = $agi->request['agi_accountcode'];
+$agi_context = $agi->request['agi_context'];
+$agi_callerid = $agi->request['agi_callerid'];
+$agi_channel = $agi->request['agi_channel'];
+
+// если нужно набрать не DST который задан (удобно для подмены)
+$agi_uniqueid = $agi->request['agi_uniqueid'];
+$agi_extension = $agi->request['agi_extension'];
+if (isset($_SERVER["argv"][2]) && !empty($_SERVER["argv"][2])) {
+    $agi_extension = $_SERVER["argv"][2];
+}
+
+
+$GLOBALS['KINT_DUMP'] = FALSE;
+// ========================  Отладка  ===============================
+if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
+    
+    $GLOBALS['KINT_DUMP'] = TRUE;
+    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
+    $agi_context = 'textcontext';
+    $agi_channel = '';
+    $agi_uniqueid = "00" . time() . ".00";
+}
+
+// ========================  Отладка  ===============================
+
+$rrApp->uniqueid = $agi_uniqueid;
+$rrApp->extension = $agi_extension;
+
+$rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
+$rrApp->call = array();
+
+if (empty($agi_accountcode)) {
+    $mes = "Не хватает переменных accountcode пустой";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+$rrApp->call['accountcode'] = $agi_accountcode;
+$rrApp->call['starttime'] = date("Y-m-d H:i:s", time());
+$rrApp->call['calledstation'] = (is_numeric($agi->request['agi_arg_1'])) ? $agi->request['agi_arg_1'] : 0;
+$rrApp->call['uniqueid'] = $agi_uniqueid;
+if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
+    $rrApp->call['src'] = $agi_accountcode;
+} 
+else {
+    $src = $agi->get_variable('CDR(src)', true);
+    $rrApp->call['src'] = isset($src['data']) ? $src['data'] : $agi_accountcode;
+}
+$rrApp->call['type'] = 'admin';
+$rrApp->call['dst'] = $agi_extension;
+$rrApp->unixdatatime['starttime'] = time();
+
+$rrApp->loger(info, __FILE__, __LINE__, "Исходящий (admin) звонок на номер " . $agi_extension);
+
+list($idtrunk, $extension) = @explode('*', $agi_extension);
+$agi_extension = $extension;
+
+if (!is_numeric($idtrunk) OR is_null($agi_uniqueid)) {
+    $mes = "Не хватает переменных  idtrunk или agi_uniqueid в неверном формате";
+    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+}
+$rrApp->loger(debug, __FILE__, __LINE__, "Исходящий (admin) звонок на номер trunk id: $idtrunk " . $agi_extension);
+
+$trunk = Cc_trunk::where('id_trunk', $idtrunk)->first();
+
+if (!isset($trunk->ext_trunk)) {
+    $mes = "Транк с ID $idtrunk, не обнаружен выход.";
+    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+}
+
+$rrApp->call['to_id_trunk_call'] = $trunk->id_trunk;
+$rrApp->call['loopdial'] = 1;
+$rrApp->call['to_id_directions_call'] = NULL;
+$rrApp->call['to_id_supertrunk_call'] = NULL;
+$rrApp->call['to_id_tariff_call'] = NULL;
+$rrApp->call['nasipaddress'] = $trunk->ext_trunk;
+$rrApp->call['startdialtime'] = date("Y-m-d H:i:s", time());
+$rrApp->unixdatatime['startdialtime'] = time();
+
+$tech = $trunk->tprefix;
+$outtrunk = $trunk->ext_trunk;
+
+if (empty($tech) || !in_array($tech, ["sip", 'iax', 'IAX', 'SIP', 'PJSIP', 'pjsip']) || empty($outtrunk)) {
+    
+    $mes = "У транка id:$idtrunk   tech $tech, некоректен.";
+    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+}
+
+//Удаляем и добавляем префикс в транке
+$removeprefix = $trunk->minus_prefix;
+if (!empty($removeprefix) && strncmp($agi_extension, $removeprefix, strlen($removeprefix)) == 0 && !empty($removeprefix)) {
+    $agi_extension = substr($agi_extension, strlen($removeprefix));
+    $rrApp->loger(info, __FILE__, __LINE__, "Удаления префикса trunk: " . $removeprefix . " agi_extension= :" . $agi_extension);
+}
+$addprefix = $trunk->dial_prefix;
+if (!empty($addprefix)) {
+    $agi_dial = trim($addprefix) . $agi_extension;
+    $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса trunk: " . $addprefix . " agi_extension= :" . $agi_extension);
+} 
+else {
+    
+    $agi_dial = $agi_extension;
+}
+
+if (!empty($trunk->forced_clid)) {
+    $rrApp->loger(info, __FILE__, __LINE__, "Установка CID: " . $trunk->forced_clid);
+    $agi->set_callerid($trunk->forced_clid);
+}
+
+$dialparams = str_replace("%timeout%", 1800, $rrApp->agiconfig['dialcommand_param']);
+
+if ((int)$rrApp->agiconfig['switchdialcommand'] == 1) {
+    $dialstr = "$tech/$agi_extension@$outtrunk" . $dialparams;
+} 
+else {
+    $dialstr = "$tech/$outtrunk/$agi_dial" . $dialparams;
+}
+
+$rrApp->loger(info, __FILE__, __LINE__, "Попытка набора  " . $dialstr . "  limit_dial: 1800");
+
+$rrApp->dialstatus = $rrApp->run_dial($dialstr);
+$rrApp->loger(info, __FILE__, __LINE__, "DIALSTATUS: (" . $rrApp->dialstatus . ")");
+
+$rrApp->call['terminatecauseid'] = isset($rrApp->dialstatus_rev_list[$rrApp->dialstatus]) ? $rrApp->dialstatus_rev_list[$rrApp->dialstatus] : 10;
+
+if (!isset($_SERVER["argv"][3])) {
+    $rrApp->call['cid'] = $rrApp->agi->get_variable('CALLERID(num)', true);
+    $rrApp->call['calleridname'] = $rrApp->agi->get_variable('CALLERID(name)', true);
+}
+
+$rrApp->logedr();
+$rrApp->loger(info, __FILE__, __LINE__, "chdublepb-admin Выход по дефолтy;");
+$agi->hangup();
+exit();

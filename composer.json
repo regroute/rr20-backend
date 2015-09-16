@@ -1,0 +1,22 @@
+{
+  "name": "App",
+  "require": {
+    "illuminate/database": "4.2.*",
+    "illuminate/cache": "4.2.*",
+    "illuminate/filesystem": "4.2.*",
+    "illuminate/log": "4.2.*",
+    "raveren/kint": "^1.0",
+    "blablacar/memcached-client": "@stable"
+  },
+  "autoload": {
+    "classmap": [
+            "models"
+     ],
+     "files": [
+        "class/Rr.php", 
+        "class/phpagi.php", 
+        "class/phpagi-asmanager.php" 
+    ]
+
+  }
+}

@@ -1,0 +1,405 @@
+#!/usr/bin/php -q
+<?php
+error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
+
+declare(ticks = 1);
+
+date_default_timezone_set('Europe/Minsk');
+setlocale(LC_ALL, "ru_RU.UTF-8");
+setlocale(LC_CTYPE, array(
+    'ru_RU.utf8',
+    'ru_UA.utf8'
+));
+
+set_time_limit(60);
+ini_set('max_execution_time', 60);
+
+if (function_exists('pcntl_signal')) {
+    pcntl_signal(SIGHUP, SIG_IGN);
+}
+
+include (dirname(__FILE__) . "/vendor/autoload.php");
+include (dirname(__FILE__) . "/class/autoload.php");
+
+$agi = new AGI();
+$asm = new AGI_AsteriskManager();
+$rrApp = new Rr($agi);
+
+$agi_accountcode = $agi->request['agi_accountcode'];
+$agi_context = $agi->request['agi_context'];
+$agi_callerid = $agi->request['agi_callerid'];
+$agi_channel = $agi->request['agi_channel'];
+
+// если нужно набрать не DST который задан (удобно для подмены)
+$agi_uniqueid = $agi->request['agi_uniqueid'];
+$agi_extension = $agi->request['agi_extension'];
+if (isset($_SERVER["argv"][2]) && is_numeric($_SERVER["argv"][2])) {
+    $agi_extension = $_SERVER["argv"][2];
+}
+
+$GLOBALS['KINT_DUMP']=FALSE;
+// ========================  Отладка  ===============================
+if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
+    $GLOBALS['KINT_DUMP']=TRUE;
+    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
+    $agi_context = 'textcontext';
+    $agi_channel = '';
+    $agi_uniqueid = "00".time().".00";
+}
+// ========================  Отладка  ===============================
+
+$rrApp->uniqueid = $agi_uniqueid;
+$rrApp->extension = $agi_extension;
+
+$rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
+
+$mes = "Исходящий звонок на номер " . $agi_extension;
+$rrApp->loger(info, __FILE__, __LINE__, $mes);
+
+$rrApp->call = array();
+
+if (!is_numeric($agi_extension) OR is_null($agi_uniqueid)) {
+    $mes = "Не хватает переменных; extension  в неверном формате ";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+if (empty($agi_accountcode)) {
+    $mes = "Не хватает переменных accountcode пустой";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+// ========================  Проверка на наличие в cc_blacklist  ===============================
+$black = Cc_blacklist::GetExtenBlackList($agi_extension, 'OUT');
+
+if (isset($black->id_assignment)) {
+    $mes = "Номер: " . $agi_extension . " находится  в черном списке c пометкой: " . $black->note_blacklist . ' \n';
+    $agi->verbose($mes);
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    
+    $rrApp->call['in_id_assignment'] = $black->id_assignment;
+    $rrApp->call['in_id_blacklist'] = $black->id_blacklist;
+    $rrApp->call['userfield'] = $black->note_blacklist;
+    $rrApp->actionEntryCall($black);
+}
+
+$rrApp->call['accountcode'] = $agi_accountcode;
+$rrApp->call['starttime'] = date("Y-m-d H:i:s", time());
+$rrApp->call['calledstation'] = (is_numeric($agi->request['agi_arg_1'])) ? $agi->request['agi_arg_1'] : 0;
+$rrApp->call['type'] = 'out';
+$rrApp->call['uniqueid'] = $agi_uniqueid;
+
+if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
+    $rrApp->call['src'] = $agi_accountcode;
+} 
+else {
+    $src=$agi->get_variable('CDR(src)',true);
+    $rrApp->call['src'] = isset($src['data'])?$src['data']:$agi_accountcode;
+}
+
+$rrApp->call['dst'] = $agi_extension;
+
+$rrApp->unixdatatime['starttime'] = time();
+
+// ========================  Блок потребитель   ===============================
+
+$cusdata = Cc_customer::where('cust_accountcode', $agi_accountcode)->where('active_customer', 1)->first();
+if (!isset($cusdata->cust_minus_prefix)) {
+    $mes = "Accountcode: $agi_accountcode не найден; Выходим.";
+    $agi->verbose($mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+$rrApp->loger(debug, __FILE__, __LINE__, "Данные пользователя (потребитель) по accountcode: $agi_accountcode", json_decode(json_encode($cusdata) , true));
+
+//Удаляем и добавляем префикс в номере от Custtomer
+$removeprefix = $cusdata->cust_minus_prefix;
+if (!empty($removeprefix) && strncmp($agi_extension, $removeprefix, strlen($removeprefix)) == 0) {
+    $agi_extension = substr($agi_extension, strlen($removeprefix));
+    $rrApp->loger(info, __FILE__, __LINE__, "Удаление префикса (потребитель): " . $removeprefix . " agi_extension= :" . $agi_extension);
+}
+$addprefix = $cusdata->cust_plass_prefix;
+if (!empty($addprefix)) {
+    $agi_extension = trim($addprefix) . $agi_extension;
+    $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса (потребитель): " . $addprefix . "  agi_extension= :" . $agi_extension);
+}
+
+// CID customer
+if (!empty($cusdata->forced_clid_customer)) {
+    $rrApp->loger(info, __FILE__, __LINE__, "Установка CID (customer): " . $cusdata['forced_clid_customer']);
+    $agi->set_callerid($cusdata->forced_clid_customer);
+}
+
+$arbb = $rrApp->get_channels_busy($asm);
+$rrApp->loger(info, __FILE__, __LINE__, " Список занятых каналов (вход): ", $arbb['account']);
+
+//Проверка на количество линий на входе.
+$max_account = (int)$cusdata->custhannels;
+if ($max_account === '-1') {
+    $max_account = NULL;
+}
+
+if (isset($arbb['account'][$agi_accountcode])) {
+    if (!is_null($max_account) && $arbb['account'][$agi_accountcode] >= $max_account) {
+        $mes = "Количество линий agi_accountcode  " . $agi_accountcode;
+        $mes = " :" . $arbb['account'][$agi_accountcode];
+        $mes = " больше чем " . $cusdata->custhannels . "в табличке cc_customer;  Выходим.";
+        $rrApp->stoperror(__FILE__, __LINE__, $mes);
+    }
+}
+
+$custtariff = Cc_custariff::GetCusTariff($cusdata->id_customer);
+if (!is_array($custtariff)) {
+    $mes = "Не найден потребительский тариф для  id_accountcode : " . $agi_accountcode;
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+};
+
+if ($rrApp->agiconfig['verbosity_level'] >= info) {
+    $mes = array();
+    foreach ($custtariff as $value) {
+        $mes[] = "id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
+    }
+    $rrApp->loger(info, __FILE__, __LINE__, "Список тарифных планов (потребитель) id_accountcode : " . $agi_accountcode, $mes);
+}
+$rrApp->cust_limit_dial =0;
+foreach ($custtariff as $value) {
+    if (!preg_match("'" . $value['regular_custariff'] . "'", $agi_extension)) {
+        $mes = "Проверка на (потребитель) регулярку не пройдена R:" . $value['regular_custariff'] . "  ext:" . $agi_extension . "; continue";
+        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        continue;
+    }
+    
+    if (!empty($addprefix)) {
+        $agi_extension = trim($addprefix) . $agi_extension;
+        $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса CusttomerTariff: " . $addprefix . "  agi_extension= :" . $agi_extension);
+    }
+    
+    $rrApp->cust_limit_dial = $rrApp->calculate_timedial($value['limit'], $value['whattdo']);
+    
+    if (is_null($rrApp->cust_limit_dial)) {
+        $mes = "В тарифе id: " . $value['name_custariff'] . " закончились минуты;  continue";
+        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        $agi->verbose($mes);
+        continue;
+    }
+    
+    $mes = "Проверка на customer регулярку пройдена;";
+    $mes.= " Регулярка: id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->loger(info, __FILE__, __LINE__, "Доступная длительность звонка (потребитель) :" . $rrApp->cust_limit_dial);
+    $rrApp->call['to_id_custariff_call'] = $value['id_custariff'];
+    break;
+}
+
+// выход или по break или по перебору
+if (is_null($rrApp->cust_limit_dial)) {
+    $mes = "Нет доступных минут для звонка  agi_accountcode: " . $agi_accountcode . ", либо не найден подходящий тариф для звонка";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+// ========================  Блок поставщик   ===============================
+
+$directions = Cc_directions::GetDirections();
+if (is_null($directions)) {
+    $mes = "Назначения не найдены, проверте заполнение таблички Cc_directions ";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+};
+
+if ($rrApp->agiconfig['verbosity_level'] >= info) {
+    $mes = array();
+    foreach ($directions as $row) {
+        $mes[] = "name: " . $row->name_directions . " id:" . $row->id_directions . " regular:|" . $row->regular_directions . "|";
+    }
+    $rrApp->loger(info, __FILE__, __LINE__, "Список доступных направлений:", $mes);
+}
+
+$id_directions = NULL;
+$how_to_select = NULL;
+
+foreach ($directions as $row) {
+    if (!preg_match("'" . $row->regular_directions . "'", $agi_extension)) {
+        $mes = "Проверка на регулярку не пройдена R:" . $row->regular_directions . "  ext:" . $agi_extension . "; continue";
+        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        continue;
+    }
+    
+    $rrApp->call['to_id_directions_call'] = $row->id_directions;
+    $id_directions = $row->id_directions;
+    $how_to_select = $row->how_to_select;
+    
+    // Префиксы  directions
+    $removeprefix = $row->direc_minus_prefix;
+    if (!empty($removeprefix) && strncmp($agi_extension, $removeprefix, strlen($removeprefix)) == 0) {
+        $agi_extension = substr($agi_extension, strlen($removeprefix));
+        $rrApp->loger(info, __FILE__, __LINE__, "Удаления префикса directions: " . $removeprefix . " agi_extension=" . $agi_extension);
+    }
+    $addprefix = $row->direc_plass_prefix;
+    if (!empty($addprefix)) {
+        $agi_extension = trim($addprefix) . $agi_extension;
+        $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса directions: " . $addprefix . "  agi_extension=" . $agi_extension);
+    }
+    
+    $mes = "Проверка на основную регулярку пройдена!";
+    $mes.= " Регулярка: name: " . $row->name_directions . " id:" . $row->id_directions . " regular:|" . $row->regular_directions . "|";
+    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    break;
+}
+
+if (is_null($id_directions)) {
+    $mes = "Не найдено возможного направления для набора номера: $agi_extension, проверте доступные направления.";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+//Получаем транки для данного направления
+$artrunks = Cc_supertrunk::GetTrunks($id_directions);
+if (!is_array($artrunks) OR !count($artrunks)) {
+    $mes = "Направление id:$id_directions  не имеет доступных для набора транков";
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+$rrApp->showtrunk(debug, 'Cписок транков', $artrunks, $agi_accountcode);
+
+// Блок  перебора.  Убираем занятые транки, ставим лимиты перебора.
+// Убираем транки которые не проходят по регулярке.
+$_clartrunk0 = array();
+$rrApp->loger(info, __FILE__, __LINE__, " Список занятых каналов (исход): ", $arbb['chan']);
+
+foreach ($artrunks as $value) {
+    
+    //Полная проверка с тарифами
+    if (!preg_match("'" . $value['regular_tariff'] . "'", $agi_extension)) {
+        $rrApp->loger(debug, __FILE__, __LINE__, "Пропуск транка " . $value['ext_trunk'] . " не проходит по регулярке: " . $value['regular_tariff']);
+        continue;
+    }
+    $value['limit_dial'] = $rrApp->calculate_timedial($agi, $value['limit_'], $value['whattdo']);
+    if (is_null($value['limit_dial'])) {
+        $mes = "--==== CONTINUE-> TRUNK:" . $value['ext_trunk'] . "; В транке закончились доступные для набора минуты ===---";
+        $rrApp->loger(info, __FILE__, __LINE__, $mes);
+        $agi->verbose($mes);
+        continue;
+    }
+    
+    // Количество занятых каналов (Online).
+    $max_chan = NULL;
+    if (isset($arbb['chan'][$value['ext_trunk']])) {
+        $max_chan = (int)$arbb['chan'][$value['ext_trunk']];
+    }
+    
+    //(int)$value['nchannels'] > 0 Отсекаем транкив которых нет ограничения
+    if (in_array($value['ext_trunk'], array_keys($arbb['chan'])) AND (int)$value['nchannels'] >= 1) {
+        
+        if ($max_chan >= (int)$value['nchannels']) {
+            $mes = "[Транк: " . $value['ext_trunk'] . " каналов доступно: " . $value['nchannels'] . " занято: " . $max_chan;
+            $mes.= " Пропуск транка " . $value['ext_trunk'] . " он уже занят ]\n";
+            $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+            continue;
+        } 
+        else {
+            $mes = "[Транк: " . $value['ext_trunk'] . " каналов: " . $value['nchannels'] . " занято: " . $max_chan;
+            $mes.= " Транк оставляем " . $value['ext_trunk'] . " еще есть каналы ]\n";
+            $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        }
+    }
+    
+    $_clartrunk0[] = $value;
+}
+$rrApp->showtrunk(info, 'Список транков готовых к набору', $_clartrunk0, $agi_accountcode);
+
+// иначе нет смысла
+if (count($_clartrunk0) > 1) {
+    
+    // ========================  Блок сортировки   ===============================
+    $rrApp->loger(info, __FILE__, __LINE__, "Старт сортировки; Тип сортировки: " . $how_to_select);
+    
+    if ($how_to_select === "olders") {
+        $by = 'order_supertank';
+        usort($_clartrunk0, function ($first, $second) use ($by) {
+            if ($first[$by] < $second[$by]) {
+                return 1;
+            } 
+            elseif ($first[$by] > $second[$by]) {
+                return -1;
+            }
+            return 0;
+        });
+    } 
+    elseif ($how_to_select === "min_minut") {
+        $by = 'limit_';
+        usort($_clartrunk0, function ($first, $second) use ($by) {
+            if ($first[$by] < $second[$by]) {
+                return -1;
+            } 
+            elseif ($first[$by] > $second[$by]) {
+                return 1;
+            }
+            return 0;
+        });
+    } 
+    elseif ($how_to_select === "max_minut") {
+        $by = 'limit_';
+        usort($_clartrunk0, function ($first, $second) use ($by) {
+            if ($first[$by] < $second[$by]) {
+                return 1;
+            } 
+            elseif ($first[$by] > $second[$by]) {
+                return -1;
+            }
+            return 0;
+        });
+    } 
+    elseif ($how_to_select === "max_persent") {
+        $by = 'limit_perse';
+        usort($_clartrunk0, function ($first, $second) use ($by) {
+            if ($first[$by] < $second[$by]) {
+                return -1;
+            } 
+            elseif ($first[$by] > $second[$by]) {
+                return 1;
+            }
+            return 0;
+        });
+    } 
+    elseif ($how_to_select === "skill_maxminut") {
+        $orderBy = array(
+            'skill_' => 'desc',
+            'limit_' => 'desc'
+        );
+        usort($_clartrunk0, 'cmp');
+    } 
+    elseif ($how_to_select === "skill_minminut") {
+        $orderBy = array(
+            'skill_' => 'desc',
+            'limit_' => 'asc'
+        );
+        usort($_clartrunk0, 'cmp');
+    } 
+    else {
+        $mes = "Не найдена стратегия сортировки транков";
+        $rrApp->stoperror(__FILE__, __LINE__, $mes);
+    }
+    
+    // Нужно для сортировки
+    function cmp($a, $b) {
+        $result = 0;
+        global $orderBy;
+        foreach ($orderBy as $key => $value) {
+            if ($a[$key] == $b[$key]) continue;
+            $result = ($a[$key] < $b[$key]) ? -1 : 1;
+            if ($value == 'desc') $result = - $result;
+            break;
+        }
+        return $result;
+    }
+    $rrApp->showtrunk(info, 'Список  каналов ПОСЛЕ сортировки', $_clartrunk0, $agi_accountcode);
+}
+
+if (!is_array($_clartrunk0) OR !count($_clartrunk0)) {
+    $mes = "Нету транков (свободных/с наличными минутами), через которые не звонили, конец набора; DST:" . $agi_extension;
+    $agi->verbose($mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
+}
+
+$rrApp->showtrunk(info, 'Список и порядок ext_trunk для дозвона после всех манипуляций', $_clartrunk0, $agi_accountcode);
+$rrApp->dial_function($_clartrunk0, $agi_extension);
+
+$rrApp->loger(info, __FILE__, __LINE__, "chdublepb; Выход по дефолтy;");
+$agi->hangup();
+exit();

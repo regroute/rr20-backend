@@ -1,0 +1,28 @@
+<?php
+
+$config['host'] = '127.0.0.1';
+$config['database'] = 'rr20';
+$config['username'] = 'root';
+$config['password'] = '';
+
+// кеш драйвер
+//'file'| 'apc' | 'memcached'
+$config['cache_driver'] = 'memcached';
+$config['cache_path'] = '/tmp/agicache';
+$config['cache_global'] = 2;
+
+// memcache 
+$config['cache_servers'] = '127.0.0.1';
+$config['cache_port'] = 11211;
+
+// Директория с логами; Должна иметь права на запись от пользователя asterisk
+//  dirname(__FILE__) . '/../logs/log_'.date("Y-m-d").'.log' | /var/log/asterisk/agi.log   
+$config['logs_patch'] =dirname(__FILE__) . '/../logs/log_'.date("Y-m-d").'.log';
+
+//get_channels_busy
+$config['channels_custom'] ='/^(SIP|IAX)\/([A-Za-z0-9\_]+)\-(\w+)\!/i';
+$config['channels_accounts'] ='/(\d+\:\d+\:\d+)\)\!([A-Za-z0-9\_]+)\!([A-Za-z0-9\_]+)\!/i';
+
+//Bill
+// поле  по которому исчитается  время звонка
+$config['pole_bill'] = 'billsec';
