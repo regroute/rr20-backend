@@ -21,11 +21,12 @@ class Cc_supertrunk extends Eloquent
                   ->where('type', 'out')
                   ->where('active_supertrunk', 1)
                   ->where('active_trunk', 1)
-                  ->orderBy('order_supertank','asc')
+                  ->orderBy('order_supertank','ASC')
                   ->orderBy('skill_','DESC')
                   ->remember(cache_global)
                   ->get();
 
+           // ddd(json_decode(json_encode($QQ)));
             return json_decode(json_encode($QQ) , true);      
 
     }
