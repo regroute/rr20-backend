@@ -37,15 +37,17 @@ if (isset($_SERVER["argv"][2]) && is_numeric($_SERVER["argv"][2])) {
     $agi_extension = $_SERVER["argv"][2];
 }
 
-$GLOBALS['KINT_DUMP']=FALSE;
+$GLOBALS['KINT_DUMP'] = FALSE;
+
 // ========================  Отладка  ===============================
 if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
-    $GLOBALS['KINT_DUMP']=TRUE;
+    $GLOBALS['KINT_DUMP'] = TRUE;
     $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
     $agi_context = 'textcontext';
     $agi_channel = '';
-    $agi_uniqueid = "00".time().".00";
+    $agi_uniqueid = "00" . time() . ".00";
 }
+
 // ========================  Отладка  ===============================
 
 $rrApp->uniqueid = $agi_uniqueid;
@@ -92,8 +94,8 @@ if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
     $rrApp->call['src'] = $agi_accountcode;
 } 
 else {
-    $src=$agi->get_variable('CDR(src)',true);
-    $rrApp->call['src'] = isset($src['data'])?$src['data']:$agi_accountcode;
+    $src = $agi->get_variable('CDR(src)', true);
+    $rrApp->call['src'] = isset($src['data']) ? $src['data'] : $agi_accountcode;
 }
 
 $rrApp->call['dst'] = $agi_extension;
@@ -159,7 +161,7 @@ if ($rrApp->agiconfig['verbosity_level'] >= info) {
     }
     $rrApp->loger(info, __FILE__, __LINE__, "Список тарифных планов (потребитель) id_accountcode : " . $agi_accountcode, $mes);
 }
-$rrApp->cust_limit_dial =0;
+$rrApp->cust_limit_dial = 0;
 foreach ($custtariff as $value) {
     if (!preg_match("'" . $value['regular_custariff'] . "'", $agi_extension)) {
         $mes = "Проверка на (потребитель) регулярку не пройдена R:" . $value['regular_custariff'] . "  ext:" . $agi_extension . "; continue";
@@ -313,10 +315,10 @@ if (count($_clartrunk0) > 1) {
         $by = 'order_supertank';
         usort($_clartrunk0, function ($first, $second) use ($by) {
             if ($first[$by] < $second[$by]) {
-                return 1;
+                return -1;
             } 
             elseif ($first[$by] > $second[$by]) {
-                return -1;
+                return 1;
             }
             return 0;
         });
@@ -358,36 +360,49 @@ if (count($_clartrunk0) > 1) {
         });
     } 
     elseif ($how_to_select === "skill_maxminut") {
+        
         $orderBy = array(
             'skill_' => 'desc',
-            'limit_' => 'desc'
+            'limit_' => 'desc',
         );
-        usort($_clartrunk0, 'cmp');
+        // usort($_clartrunk0, 'cmp');
+        usort($_clartrunk0, function ($a, $b) use ($orderBy) {
+            $result = 0;
+            foreach ($orderBy as $key => $value) {
+                if ($a[$key] === $b[$key]) continue;
+                $result = ($a[$key] < $b[$key]) ? -1 : 1;
+                if ($value === 'desc') $result = - $result;
+                break;
+            }
+            return $result;
+        });
     } 
     elseif ($how_to_select === "skill_minminut") {
-        $orderBy = array(
+         
+         $orderBy = array(
             'skill_' => 'desc',
-            'limit_' => 'asc'
+            'limit_' => 'asc',
         );
-        usort($_clartrunk0, 'cmp');
+        usort($_clartrunk0, function ($a, $b) use ($orderBy) {
+            $result = 0;
+            foreach ($orderBy as $key => $value) {
+                if ($a[$key] === $b[$key]) continue;
+                $result = ($a[$key] < $b[$key]) ? -1 : 1;
+                if ($value === 'desc') $result = - $result;
+                break;
+            }
+            return $result;
+        });
+    }
+     elseif ($how_to_select === "random") {
+         
+        shuffle($_clartrunk0);
     } 
     else {
         $mes = "Не найдена стратегия сортировки транков";
         $rrApp->stoperror(__FILE__, __LINE__, $mes);
     }
     
-    // Нужно для сортировки
-    function cmp($a, $b) {
-        $result = 0;
-        global $orderBy;
-        foreach ($orderBy as $key => $value) {
-            if ($a[$key] == $b[$key]) continue;
-            $result = ($a[$key] < $b[$key]) ? -1 : 1;
-            if ($value == 'desc') $result = - $result;
-            break;
-        }
-        return $result;
-    }
     $rrApp->showtrunk(info, 'Список  каналов ПОСЛЕ сортировки', $_clartrunk0, $agi_accountcode);
 }
 
