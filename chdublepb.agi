@@ -406,6 +406,7 @@ if (count($_clartrunk0) > 1) {
     $rrApp->showtrunk(info, 'Список  каналов ПОСЛЕ сортировки', $_clartrunk0, $agi_accountcode);
 }
 
+
 if (!is_array($_clartrunk0) OR !count($_clartrunk0)) {
     $mes = "Нету транков (свободных/с наличными минутами), через которые не звонили, конец набора; DST:" . $agi_extension;
     $agi->verbose($mes);
