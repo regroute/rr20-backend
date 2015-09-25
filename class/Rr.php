@@ -60,7 +60,7 @@ class Rr
             if (!is_null($ar)) d($ar);
             return;
         }
-        if ($this->agiconfig['verbosity_level'] < $level) {
+        if ($this->agiconfig['verbosity_level'] < $level AND $GLOBALS['KINT_DUMP']) {
             return;
         }
         
@@ -497,10 +497,10 @@ class Rr
             $this->loger(info, __FILE__, __LINE__, "RETURN STATUS:" . $this->dialstatus . " ACTION:" . $action);
             $this->logedr();
 
-            if ($this->agiconfig[$st] === 'return') {
-               return;
+            if ($this->agiconfig[$st] === 'continue') {
+              continue;
             }
-            
+            return;
         }
         
         $this->loger(info, __FILE__, __LINE__, "Закончились транки в переборе; Loop: $loop_");

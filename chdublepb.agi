@@ -42,7 +42,7 @@ $GLOBALS['KINT_DUMP'] = FALSE;
 // ========================  Отладка  ===============================
 if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
     $GLOBALS['KINT_DUMP'] = TRUE;
-    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
+    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : Cc_customer::find(1)->pluck('cust_accountcode');
     $agi_context = 'textcontext';
     $agi_channel = '';
     $agi_uniqueid = "00" . time() . ".00";
@@ -161,7 +161,8 @@ if ($rrApp->agiconfig['verbosity_level'] >= info) {
     }
     $rrApp->loger(info, __FILE__, __LINE__, "Список тарифных планов (потребитель) id_accountcode : " . $agi_accountcode, $mes);
 }
-$rrApp->cust_limit_dial = 0;
+$rrApp->cust_limit_dial = NULL;
+$rrApp->call['to_id_custariff_call'] =NULL;
 foreach ($custtariff as $value) {
     if (!preg_match("'" . $value['regular_custariff'] . "'", $agi_extension)) {
         $mes = "Проверка на (потребитель) регулярку не пройдена R:" . $value['regular_custariff'] . "  ext:" . $agi_extension . "; continue";
