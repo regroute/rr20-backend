@@ -60,7 +60,7 @@ class Rr
             if (!is_null($ar)) d($ar);
             return;
         }
-        if ($this->agiconfig['verbosity_level'] < $level AND $GLOBALS['KINT_DUMP']) {
+        if ($this->agiconfig['verbosity_level'] < $level AND !$GLOBALS['KINT_DUMP']) {
             return;
         }
         
