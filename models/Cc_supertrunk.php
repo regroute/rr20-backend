@@ -23,7 +23,7 @@ class Cc_supertrunk extends Eloquent
                   ->where('active_trunk', 1)
                   ->orderBy('order_supertank','ASC')
                   ->orderBy('skill_','DESC')
-                  ->remember(cache_global)
+                  ->remember($GLOBALS['cache_global'])
                   ->get();
 
            // ddd(json_decode(json_encode($QQ)));

@@ -15,7 +15,7 @@ class Cc_custariff extends Eloquent
         
             $qq = $query->where('to_id_customer', $id_customer)
                   ->where('active_custariff', 1)
-                  ->remember(cache_global)
+                  ->remember($GLOBALS['cache_global'])
                   ->orderBy('id_custariff','asc')
                   ->get();
 

@@ -33,7 +33,6 @@ class Cc_call extends Eloquent {
                    ->whereNotNull('to_id_custariff_call')
                    ->first();
 
-           // ddd(Capsule::getQueryLog());       
     }
 
 }

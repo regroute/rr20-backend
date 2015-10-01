@@ -27,8 +27,8 @@ class Rr
         
         include (dirname(__FILE__) . "/../config/config.php");
         $this->config = $config;
-        define('cache_global', $config['cache_global']);
-        $options = Cc_options::select('options', 'name_options')->where('group_options', 'agi')->remember((int)cache_global)->get();
+        $GLOBALS['cache_global']=$config['cache_global'];
+        $options = Cc_options::select('options', 'name_options')->where('group_options', 'agi')->remember((int)$GLOBALS['cache_global'])->get();
         foreach ($options as $row) {
             $r[$row->name_options] = $row->options;
         }
@@ -55,12 +55,18 @@ class Rr
     
     function loger($level, $file, $line, $string, $ar = NULL) {
         
+        // если системный level ниже notice, то при включеном KINT_DUMP, ставим уровень notice
+        if ($GLOBALS['KINT_DUMP'] && $this->agiconfig['verbosity_level'] < 2) {
+            $this->agiconfig['verbosity_level'] = 2;
+        }
+        
+        if ($this->agiconfig['verbosity_level'] < $level) {
+            return;
+        }
+        
         if ($GLOBALS['KINT_DUMP']) {~d("$level | $file | $line");
             if (!is_null($string)) d($string);
             if (!is_null($ar)) d($ar);
-            return;
-        }
-        if ($this->agiconfig['verbosity_level'] < $level AND !$GLOBALS['KINT_DUMP']) {
             return;
         }
         
@@ -112,7 +118,7 @@ class Rr
         $this->call['terminatecauseid'] = 10;
         $this->call['userfield'] = $er;
         
-        if (KINT_DUMP) {
+        if ($GLOBALS['KINT_DUMP']) {
             exit(0);
         }
         
@@ -301,15 +307,15 @@ class Rr
             
             // Проверка на действие whattdo
             if ($whattdo === "do_nothing") {
-                $this->loger(debug, __FILE__, __LINE__, "В данном транке нeту свободных минут, но по нем можно звонить ставим max_dial: $max_dial c");
+                $this->loger(info, __FILE__, __LINE__, "В данном транке нeту свободных минут, но по нем можно звонить ставим max_dial: $max_dial c");
                 return $max_dial;
             } 
             elseif ($whattdo === "do_notify") {
                 return $max_dial;
-                $this->loger(debug, __FILE__, __LINE__, "В данном транке нeту свободных минут, но по нем можно звонить, уведомляем, ставим max_dial $max_dial c");
+                $this->loger(info, __FILE__, __LINE__, "В данном транке нeту свободных минут, но по нем можно звонить, уведомляем, ставим max_dial $max_dial c");
             } 
             elseif ($whattdo === "do_deny") {
-                $this->loger(debug, __FILE__, __LINE__, "В данном транке нeту свободных минут выключаем");
+                $this->loger(info, __FILE__, __LINE__, "В данном транке нeту свободных минут выключаем");
                 return NULL;
             }
         }
@@ -338,6 +344,7 @@ class Rr
                 $mes[$i].= ' | trunk: ' . $value['name_trunk'];
                 $mes[$i].= ' | DIAL: ' . $value['tprefix'] . '/' . $value['ext_trunk'] . "/" . $value['dial_prefix'] . " {NOMER}";
                 $mes[$i].= ' | tariff: ' . $value['name_tariff'] . "|  остаток: " . round($value['limit_'] / 60);
+                $mes[$i].= " (".$value['limit_perse'].") ";
                 $mes[$i].= ' | каналов: ' . $value['nchannels'];
                 if (isset($value['limit_dial'])) $mes[$i].= ' | мак t звонка: ' . $value['limit_dial'];
                 $mes[$i].= ' | skill: ' . $value['skill_'];
@@ -349,7 +356,7 @@ class Rr
     public function run_dial($dialstr) {
         
         if (isset($_SERVER["argv"][3]) && $_SERVER["argv"][3]) {
-            $this->loger(debug, __FILE__, __LINE__, "================: TEST DIAL  $dialstr ;  DIALSTATUS: " . $_SERVER["argv"][3]);
+            $this->loger(notice, __FILE__, __LINE__, "================: TEST DIAL  $dialstr ;  DIALSTATUS: " . $_SERVER["argv"][3]);
             return $_SERVER["argv"][3];
         }
         
@@ -358,7 +365,7 @@ class Rr
         
         $res_dial = $this->agi->exec("DIAL $dialstr");
         $this->dialstatus = $this->agi->get_variable("DIALSTATUS", true);
-        $this->loger(debug, __FILE__, __LINE__, "DIALSTATUS: " . $this->dialstatus);
+        $this->loger(info, __FILE__, __LINE__, "DIALSTATUS: " . $this->dialstatus);
         
         return $this->dialstatus;
     }
@@ -390,7 +397,7 @@ class Rr
             
             if ($loop_ >= $this->agiconfig['failover_recursive_limit']) {
                 $mes = "Превысили failover_recursive_limit; Loop: $loop_";
-                $this->loger(info, __FILE__, __LINE__, $mes);
+                $this->loger(notice, __FILE__, __LINE__, $mes);
                 $this->call['userfield'] = $mes;
                 $this->logedr();
                 exit();
@@ -496,9 +503,9 @@ class Rr
             
             $this->loger(info, __FILE__, __LINE__, "RETURN STATUS:" . $this->dialstatus . " ACTION:" . $action);
             $this->logedr();
-
+            
             if ($this->agiconfig[$st] === 'continue') {
-              continue;
+                continue;
             }
             return;
         }
@@ -533,7 +540,7 @@ class Rr
         $this->call['status_ftp'] = 0;
         
         $id = Cc_call::insertGetId($this->call);
-        $this->loger(debug, __FILE__, __LINE__, "INSERT CALL id:$id", $this->call);
+        $this->loger(info, __FILE__, __LINE__, "INSERT CALL id:$id", $this->call);
         $terminatecauseid = (isset($this->call['terminatecauseid'])) ? (int)$this->call['terminatecauseid'] : 10;
         
         // локальный трафик не тарифицируется
@@ -541,7 +548,7 @@ class Rr
             
             $sec = $this->getbillarray($this->call['uniqueid'], $this->call['type']);
             if (is_numeric($sec)) {
-                $this->loger(info, __FILE__, __LINE__, "Билинг  прошел удачно отминусовано $sec сек");
+                $this->loger(notice, __FILE__, __LINE__, "Билинг прошел удачно списано $sec сек");
             }
         }
     }
@@ -550,13 +557,13 @@ class Rr
         
         $pole_bill = (isset($this->config['pole_bill']) && empty($this->config['pole_bill'])) ? $this->config['pole_bill'] : 'billsec';
         
-        $qq = ($type === 'out')? Cc_call::GetBill($agi_uniqueid, $pole_bill):Cc_call::GetBillLocal($agi_uniqueid, $pole_bill);
-        
-        if(!isset($qq->$pole_bill) OR $qq->$pole_bill < 1){
-            $this->loger(error, __FILE__, __LINE__, "Нет возможности провести подтсчет трафика для записи ID: $agi_uniqueid.");
-            return; 
-        }
+        $qq = ($type === 'out') ? Cc_call::GetBill($agi_uniqueid, $pole_bill) : Cc_call::GetBillLocal($agi_uniqueid, $pole_bill);
 
+        if (!isset($qq->$pole_bill) OR $qq->$pole_bill < 1) {
+            $this->loger(error, __FILE__, __LINE__, "Нет возможности провести подтсчет трафика для записи ID: $agi_uniqueid.");
+            return;
+        }
+        
         $this->loger(debug, __FILE__, __LINE__, "Найдено поле для тарификации, ID:" . $qq->id . " значение для тарификации: " . $qq->$pole_bill);
         
         // посекундная тарификация
@@ -568,7 +575,6 @@ class Rr
         $this->loger(info, __FILE__, __LINE__, "Произведена тарификация(Cc_custariff), id: $qq->to_id_custariff_call; остаток: " . round($limit / 60, 2) . " min");
         Cc_call::where('id', $qq->id)->update(['status_custtariff' => 1]);
         
-            
         if ($type === 'out') {
             
             // поминутная

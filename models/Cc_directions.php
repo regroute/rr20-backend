@@ -14,7 +14,7 @@ class Cc_directions extends Eloquent
     public function scopeGetDirections($query) {
         
            return $query->where('active_directions', 1)
-                  ->remember(cache_global)
+                  ->remember($GLOBALS['cache_global'])
                   ->orderBy('order_direction','asc')
                   ->get();
 

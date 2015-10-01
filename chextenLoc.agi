@@ -4,7 +4,6 @@ error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
 
 declare(ticks = 1);
 
-date_default_timezone_set('Europe/Minsk');
 setlocale(LC_ALL, "ru_RU.UTF-8");
 setlocale(LC_CTYPE, array(
     'ru_RU.utf8',
@@ -43,7 +42,7 @@ $GLOBALS['KINT_DUMP'] = FALSE;
 if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
     
     $GLOBALS['KINT_DUMP']=TRUE; 
-    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : '864442881798';
+    $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : Cc_customer::find(1)->pluck('cust_accountcode');
     $agi_context = 'textcontext';
     $agi_channel = '';
     $agi_callerid='';
@@ -57,8 +56,8 @@ $rrApp->extension = $agi_extension;
 
 $rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
 
-$mes = "Исходящий звонок на номер " . $agi_extension;
-$rrApp->loger(info, __FILE__, __LINE__, $mes);
+$mes = "Локальный звонок на номер " . $agi_extension;
+$rrApp->loger(notice, __FILE__, __LINE__, $mes);
 
 $rrApp->call = array();
 
@@ -80,7 +79,7 @@ if (!isset($cusdata->cust_minus_prefix)) {
     $agi->verbose($mes);
     $rrApp->stoperror(__FILE__, __LINE__, $mes);
 }
-$rrApp->loger(debug, __FILE__, __LINE__, "Данные пользователя (потребитель) по accountcode: $agi_accountcode", json_decode(json_encode($cusdata) , true));
+$rrApp->loger(notice, __FILE__, __LINE__, "Данные пользователя (потребитель) по accountcode: $agi_accountcode", json_decode(json_encode($cusdata) , true));
 
 //Удаляем и добавляем префикс в номере от Custtomer
 $removeprefix = $cusdata->cust_minus_prefix;
@@ -101,7 +100,7 @@ if (!empty($cusdata->forced_clid_customer)) {
 }
 
 $arbb = $rrApp->get_channels_busy($asm);
-$rrApp->loger(info, __FILE__, __LINE__, " Список занятых каналов (вход): ", $arbb['account']);
+$rrApp->loger(notice, __FILE__, __LINE__, " Список занятых каналов (вход): ", $arbb['account']);
 
 //Проверка на количество линий на входе.
 $max_account = (int)$cusdata->custhannels;
@@ -131,7 +130,7 @@ if ($rrApp->agiconfig['verbosity_level'] >= info) {
     }
     $rrApp->loger(info, __FILE__, __LINE__, "Список тарифных планов (потребитель) id_accountcode : " . $agi_accountcode, $mes);
 }
-$rrApp->cust_limit_dial = 0;
+$rrApp->cust_limit_dial = NULL;
 foreach ($custtariff as $value) {
     if (!preg_match("'" . $value['regular_custariff'] . "'", $agi_extension)) {
         $mes = "Проверка на (потребитель) регулярку не пройдена R:" . $value['regular_custariff'] . "  ext:" . $agi_extension . "; continue";
@@ -148,7 +147,7 @@ foreach ($custtariff as $value) {
     
     if (is_null($rrApp->cust_limit_dial)) {
         $mes = "В тарифе id: " . $value['name_custariff'] . " закончились минуты;  continue";
-        $rrApp->loger(debug, __FILE__, __LINE__, $mes);
+        $rrApp->loger(info, __FILE__, __LINE__, $mes);
         $agi->verbose($mes);
         continue;
     }
@@ -157,6 +156,7 @@ foreach ($custtariff as $value) {
     $mes.= " Регулярка: id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
     $rrApp->loger(info, __FILE__, __LINE__, $mes);
     $rrApp->loger(info, __FILE__, __LINE__, "Доступная длительность звонка (потребитель) :" . $rrApp->cust_limit_dial);
+
     $rrApp->call['to_id_custariff_call'] = $value['id_custariff'];
     break;
 }
@@ -207,7 +207,7 @@ $rrApp->unixdatatime['starttime'] = time();
 
 if (!is_null($strdial)) {
     $strdial = substr($strdial, 0, -2);
-    $rrApp->loger(info, __FILE__, __LINE__, "Локальный звонок на номер" . $agi_extension);
+    $rrApp->loger(notice, __FILE__, __LINE__, "Локальный звонок на номер: " . $agi_extension);
     
     if ($rrApp->agiconfig['record_call_local'] && !empty($rrApp->uniqueid)) {
         $rrApp->agi->exec("StopMixMonitor");
@@ -256,6 +256,6 @@ else{
 }
 
 $rrApp->logedr();
-$rrApp->loger(info, __FILE__, __LINE__, "chextenLoc; Выход по дефолтy;");
+$rrApp->loger(notice, __FILE__, __LINE__, "chextenLoc; Выход по дефолтy;");
 $agi->hangup();
 exit();

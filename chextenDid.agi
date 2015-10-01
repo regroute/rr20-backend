@@ -4,7 +4,7 @@ error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
 
 declare(ticks = 1);
 
-date_default_timezone_set('Europe/Minsk');
+
 setlocale(LC_ALL, "ru_RU.UTF-8");
 setlocale(LC_CTYPE, array(
     'ru_RU.utf8',
@@ -49,6 +49,8 @@ if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["ar
     $agi_uniqueid = "00" . time() . ".00";
 }
 
+
+
 // ========================  Отладка  ===============================
 
 $rrApp->uniqueid = $agi_uniqueid;
@@ -57,7 +59,7 @@ $rrApp->extension = $agi_extension;
 $rrApp->loger(debug, __FILE__, __LINE__, $rrApp->agiconfig);
 $rrApp->call = array();
 
-$rrApp->loger(info, __FILE__, __LINE__, "Входящий звонок на номер " . $agi_extension);
+$rrApp->loger(notice, __FILE__, __LINE__, "Входящий звонок на номер " . $agi_extension);
 
 $rrApp->call['starttime'] = date("Y-m-d H:i:s", time());
 $rrApp->call['calledstation'] = (is_numeric($agi->request['agi_arg_1'])) ? $agi->request['agi_arg_1'] : 0;
@@ -74,7 +76,7 @@ $black = Cc_blacklist::GetExtenBlackList($agi_callerid, 'IN');
 if (isset($black->id_assignment)) {
     $mes = "Номер: " . $agi_callerid . " находится в черном списке c пометкой: " . $black->note_blacklist . ' \n';
     $agi->verbose($mes);
-    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->loger(notice, __FILE__, __LINE__, $mes);
     $rrApp->call['in_id_assignment'] = $black->id_assignment;
     $rrApp->call['in_id_blacklist'] = $black->id_blacklist;
     $rrApp->call['userfield'] = $black->note_blacklist;
@@ -86,7 +88,7 @@ $sing_destinations = Cc_trunk::GetSingleDestination($agi_extension);
 
 if (isset($sing_destinations->id_assignment)) {
     $mes = "Найден марштур для DID:$agi_extension  назначение:" . $sing_destinations->destination_assignment;
-    $rrApp->loger(info, __FILE__, __LINE__, $mes);
+    $rrApp->loger(notice, __FILE__, __LINE__, $mes);
     $rrApp->call['in_id_assignment'] = $sing_destinations->id_assignment;
     $rrApp->call['id_did'] = $sing_destinations->id_trunk;
     $rrApp->call['userfield'] = $sing_destinations->note_assignment;
@@ -94,7 +96,7 @@ if (isset($sing_destinations->id_assignment)) {
 }
 $mes = "ВНИМАНИЕ!! Не найден марштур для DID:$agi_extension; hangup.";
 $rrApp->loger(error, __FILE__, __LINE__, $mes);
-$rrApp->loger(info, __FILE__, __LINE__, "chextenDid Выход по дефолтy; hangup");
+$rrApp->loger(notice, __FILE__, __LINE__, "chextenDid Выход по дефолтy; hangup");
 
 if (!isset($_SERVER["argv"][3])) {
     $agi->verbose($mes);
