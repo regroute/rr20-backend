@@ -137,7 +137,7 @@ foreach ($custtariff as $value) {
         $rrApp->loger(debug, __FILE__, __LINE__, $mes);
         continue;
     }
-    
+    $addprefix=$value['post_prefix_plass'];
     if (!empty($addprefix)) {
         $agi_extension = trim($addprefix) . $agi_extension;
         $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса CusttomerTariff: " . $addprefix . "  agi_extension= :" . $agi_extension);

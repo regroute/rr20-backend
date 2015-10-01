@@ -170,6 +170,7 @@ foreach ($custtariff as $value) {
         continue;
     }
     
+    $addprefix=$value['post_prefix_plass'];
     if (!empty($addprefix)) {
         $agi_extension = trim($addprefix) . $agi_extension;
         $rrApp->loger(info, __FILE__, __LINE__, "Добавление префикса CusttomerTariff: " . $addprefix . "  agi_extension= :" . $agi_extension);
@@ -184,6 +185,8 @@ foreach ($custtariff as $value) {
         continue;
     }
     
+
+
     $mes = "Проверка на customer регулярку пройдена;";
     $mes.= " Регулярка: id: " . $value['id_custariff'] . " regular:|" . $value['regular_custariff'] . "|  остаток:" . round($value['limit'] / 60) . " мин";
     $rrApp->loger(info, __FILE__, __LINE__, $mes);
@@ -234,6 +237,7 @@ foreach ($directions as $row) {
         $agi_extension = substr($agi_extension, strlen($removeprefix));
         $rrApp->loger(info, __FILE__, __LINE__, "Удаления префикса directions: " . $removeprefix . " agi_extension=" . $agi_extension);
     }
+
     $addprefix = $row->direc_plass_prefix;
     if (!empty($addprefix)) {
         $agi_extension = trim($addprefix) . $agi_extension;
