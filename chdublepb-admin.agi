@@ -82,7 +82,7 @@ $agi_extension = $extension;
 
 if (!is_numeric($idtrunk) OR is_null($agi_uniqueid)) {
     $mes = "Не хватает переменных  idtrunk или agi_uniqueid в неверном формате";
-    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
 }
 $rrApp->loger(notice, __FILE__, __LINE__, "Исходящий (admin) звонок на номер trunk id: $idtrunk " . $agi_extension);
 
@@ -90,7 +90,7 @@ $trunk = Cc_trunk::where('id_trunk', $idtrunk)->first();
 
 if (!isset($trunk->ext_trunk)) {
     $mes = "Транк с ID $idtrunk, не обнаружен выход.";
-    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
 }
 
 $rrApp->call['to_id_trunk_call'] = $trunk->id_trunk;
@@ -108,7 +108,7 @@ $outtrunk = $trunk->ext_trunk;
 if (empty($tech) || !in_array($tech, ["sip", 'iax', 'IAX', 'SIP', 'PJSIP', 'pjsip']) || empty($outtrunk)) {
     
     $mes = "У транка id:$idtrunk   tech $tech, некоректен.";
-    $rrApp->stoperror($agi, __FILE__, __LINE__, $mes);
+    $rrApp->stoperror(__FILE__, __LINE__, $mes);
 }
 
 //Удаляем и добавляем префикс в транке

@@ -42,6 +42,7 @@ $GLOBALS['KINT_DUMP'] = FALSE;
 // ========================  Отладка  ===============================
 if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["argv"][3])) {
     $GLOBALS['KINT_DUMP'] = TRUE;
+
     $agi_accountcode = isset($_SERVER["argv"][4]) ? $_SERVER["argv"][4] : Cc_customer::find(1)->pluck('cust_accountcode');
     $agi_context = 'textcontext';
     $agi_channel = '';
