@@ -97,9 +97,8 @@ if ($rrApp->agiconfig['on_default_in']) {
     $sing_destinations = [];
     $sing_destinations['type_assignment'] = 'dial_replacing';
     $sing_destinations['destination_assignment'] = $rrApp->agiconfig['destenation_default_in'];
-    $rrApp->actionEntryCall(son_decode(json_encode($sing_destinations) , FALSE) , $agi_extension);
+    $rrApp->actionEntryCall(json_decode(json_encode($sing_destinations) , FALSE) , $agi_extension);
 }
-
 
 
 $mes = "ВНИМАНИЕ!! Не найден марштур для DID:$agi_extension; hangup.";
