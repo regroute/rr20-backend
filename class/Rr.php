@@ -147,7 +147,7 @@ class Rr
             case 'dial_replacing':
                 if ($this->agiconfig['record_call_in'] && !empty($this->uniqueid)) {
                     $this->agi->exec("StopMixMonitor");
-                    $fn = date("d-m-Y", time()) . "/" . $destinations->destination_assignment . "/" . $this->uniqueid . '.' . $this->agiconfig['monitor_formatfile'];
+                    $fn = date("d-m-Y", time()) . "/" . $agi_extension . "/" . $this->uniqueid . '.' . $this->agiconfig['monitor_formatfile'];
                     $this->agi->set_variable('CDR(userfield)', "audio:" . $this->agiconfig['monitor_path_in'] . $fn);
                     $this->call['userfield'] = "audio:" . $this->agiconfig['monitor_path_in'] . $fn;
                     $command_mixmonitor = "MixMonitor " . $this->agiconfig['monitor_path_in'] . $fn . "," . $this->agiconfig['mixmon_post'];
@@ -194,7 +194,7 @@ class Rr
             case 'dial':
                 if ($this->agiconfig['record_call_in'] && !empty($this->uniqueid)) {
                     $this->agi->exec("StopMixMonitor");
-                    $fn = date("d-m-Y", time()) . "/" . $destinations->destination_assignment . "/" . $this->uniqueid . '.' . $this->agiconfig['monitor_formatfile'];
+                    $fn = date("d-m-Y", time()) . "/" . $agi_extension . "/" . $this->uniqueid . '.' . $this->agiconfig['monitor_formatfile'];
                     $this->agi->set_variable('CDR(userfield)', "audio:" . $this->agiconfig['monitor_path_in'] . $fn);
                     $this->call['userfield'] = "audio:" . $this->agiconfig['monitor_path_in'] . $fn;
                     $command_mixmonitor = "MixMonitor " . $this->agiconfig['monitor_path_in'] . $fn . "," . $this->agiconfig['mixmon_post'];
