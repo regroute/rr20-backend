@@ -4,7 +4,6 @@ error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
 
 declare(ticks = 1);
 
-
 setlocale(LC_ALL, "ru_RU.UTF-8");
 setlocale(LC_CTYPE, array(
     'ru_RU.utf8',
@@ -49,8 +48,6 @@ if (isset($_SERVER["argv"][3]) && $rrApp->getDialStatus_Revert_List($_SERVER["ar
     $agi_uniqueid = "00" . time() . ".00";
 }
 
-
-
 // ========================  Отладка  ===============================
 
 $rrApp->uniqueid = $agi_uniqueid;
@@ -92,9 +89,21 @@ if (isset($sing_destinations->id_assignment)) {
     $rrApp->call['in_id_assignment'] = $sing_destinations->id_assignment;
     $rrApp->call['id_did'] = $sing_destinations->id_trunk;
     $rrApp->call['userfield'] = $sing_destinations->note_assignment;
-    $rrApp->actionEntryCall($sing_destinations,$agi_extension);
+    $rrApp->actionEntryCall($sing_destinations, $agi_extension);
 }
+
+// Маршрут по умолчанию
+if ($rrApp->agiconfig['on_default_in']) {
+    $sing_destinations = [];
+    $sing_destinations['type_assignment'] = 'dial_replacing';
+    $sing_destinations['destination_assignment'] = $rrApp->agiconfig['destenation_default_in'];
+    $rrApp->actionEntryCall(son_decode(json_encode($sing_destinations) , FALSE) , $agi_extension);
+}
+
+
+
 $mes = "ВНИМАНИЕ!! Не найден марштур для DID:$agi_extension; hangup.";
+$rrApp->call['userfield'] = $mes;
 $rrApp->loger(error, __FILE__, __LINE__, $mes);
 $rrApp->loger(notice, __FILE__, __LINE__, "chextenDid Выход по дефолтy; hangup");
 
